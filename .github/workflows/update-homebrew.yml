@@ -15,10 +15,10 @@ jobs:
           VERSION_NO_V="${VERSION#v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "version_no_v=${VERSION_NO_V}" >> $GITHUB_OUTPUT
-          if [[ "${VERSION}" =~ -(alpha|beta|rc) ]]; then
+          if [[ "${VERSION}" =~ -dev ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "formula_name=media-manager-beta" >> $GITHUB_OUTPUT
-            echo "class_name=MediaManagerBeta" >> $GITHUB_OUTPUT
+            echo "formula_name=media-manager-dev" >> $GITHUB_OUTPUT
+            echo "class_name=MediaManagerDev" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
             echo "formula_name=media-manager" >> $GITHUB_OUTPUT
@@ -59,7 +59,7 @@ jobs:
           SHA_LI="${{ steps.checksum.outputs.sha_linux_amd64 }}"
 
           if [[ "${IS_PRE}" == "true" ]]; then
-            DESC="Media automation platform (beta/development version)"
+            DESC="Media automation platform (development version)"
           else
             DESC="Media automation platform with Save.tv integration and Plex support"
           fi
