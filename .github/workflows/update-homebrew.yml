@@ -1,0 +1,137 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get release info
+        id: release
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION_NO_V="${VERSION#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version_no_v=${VERSION_NO_V}" >> $GITHUB_OUTPUT
+
+          # Determine if this is a prerelease (alpha, beta, rc)
+          if [[ "${VERSION}" =~ -(alpha|beta|rc) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "formula_name=media-manager-beta" >> $GITHUB_OUTPUT
+            echo "class_name=MediaManagerBeta" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "formula_name=media-manager" >> $GITHUB_OUTPUT
+            echo "class_name=MediaManager" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download release assets and calculate checksums
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${VERSION}"
+
+          # Download all binaries
+          curl -sL "${BASE_URL}/media-manager-darwin-arm64" -o media-manager-darwin-arm64
+          curl -sL "${BASE_URL}/media-manager-darwin-amd64" -o media-manager-darwin-amd64
+          curl -sL "${BASE_URL}/media-manager-linux-arm64" -o media-manager-linux-arm64
+          curl -sL "${BASE_URL}/media-manager-linux-amd64" -o media-manager-linux-amd64
+
+          # Calculate SHA256
+          echo "SHA_DARWIN_ARM64=$(sha256sum media-manager-darwin-arm64 | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_DARWIN_AMD64=$(sha256sum media-manager-darwin-amd64 | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_ARM64=$(sha256sum media-manager-linux-arm64 | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_AMD64=$(sha256sum media-manager-linux-amd64 | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Clone homebrew-tap
+        run: |
+          git clone https://x-access-token:${{ secrets.TAP_UPDATE_TOKEN }}@github.com/jonaskern-dev/homebrew-tap.git
+
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          VERSION_NO_V="${{ steps.release.outputs.version_no_v }}"
+          FORMULA_NAME="${{ steps.release.outputs.formula_name }}"
+          CLASS_NAME="${{ steps.release.outputs.class_name }}"
+          IS_PRERELEASE="${{ steps.release.outputs.is_prerelease }}"
+
+          # Set description based on release type
+          if [[ "${IS_PRERELEASE}" == "true" ]]; then
+            DESC="Media automation platform (beta/development version)"
+          else
+            DESC="Media automation platform with Save.tv integration and Plex support"
+          fi
+
+          cat > "homebrew-tap/Formula/${FORMULA_NAME}.rb" << EOF
+class ${CLASS_NAME} < Formula
+  desc "${DESC}"
+  homepage "https://github.com/jonaskern-dev/media-manager"
+  version "${VERSION_NO_V}"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-arm64"
+      sha256 "${SHA_DARWIN_ARM64}"
+
+      def install
+        bin.install "media-manager-darwin-arm64" => "media-manager"
+      end
+    else
+      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-amd64"
+      sha256 "${SHA_DARWIN_AMD64}"
+
+      def install
+        bin.install "media-manager-darwin-amd64" => "media-manager"
+      end
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-arm64"
+      sha256 "${SHA_LINUX_ARM64}"
+
+      def install
+        bin.install "media-manager-linux-arm64" => "media-manager"
+      end
+    else
+      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-amd64"
+      sha256 "${SHA_LINUX_AMD64}"
+
+      def install
+        bin.install "media-manager-linux-amd64" => "media-manager"
+      end
+    end
+  end
+
+  test do
+    system "#{bin}/media-manager", "--version"
+  end
+end
+EOF
+
+      - name: Validate formula
+        run: |
+          FORMULA_NAME="${{ steps.release.outputs.formula_name }}"
+          ruby -c "homebrew-tap/Formula/${FORMULA_NAME}.rb"
+
+      - name: Commit and push
+        run: |
+          FORMULA_NAME="${{ steps.release.outputs.formula_name }}"
+          VERSION_NO_V="${{ steps.release.outputs.version_no_v }}"
+          IS_PRERELEASE="${{ steps.release.outputs.is_prerelease }}"
+
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add "Formula/${FORMULA_NAME}.rb"
+
+          if [[ "${IS_PRERELEASE}" == "true" ]]; then
+            COMMIT_MSG="feat: update ${FORMULA_NAME} to ${VERSION_NO_V} (prerelease)"
+          else
+            COMMIT_MSG="feat: update ${FORMULA_NAME} to ${VERSION_NO_V}"
+          fi
+
+          git diff --staged --quiet || (git commit -m "${COMMIT_MSG}" && git push)
