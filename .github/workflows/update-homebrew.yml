@@ -49,13 +49,13 @@ jobs:
           git clone https://x-access-token:${{ secrets.TAP_UPDATE_TOKEN }}@github.com/jonaskern-dev/homebrew-tap.git
 
       - name: Update formula
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          VERSION_NO_V: ${{ steps.release.outputs.version_no_v }}
+          FORMULA_NAME: ${{ steps.release.outputs.formula_name }}
+          CLASS_NAME: ${{ steps.release.outputs.class_name }}
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
         run: |
-          VERSION="${{ steps.release.outputs.version }}"
-          VERSION_NO_V="${{ steps.release.outputs.version_no_v }}"
-          FORMULA_NAME="${{ steps.release.outputs.formula_name }}"
-          CLASS_NAME="${{ steps.release.outputs.class_name }}"
-          IS_PRERELEASE="${{ steps.release.outputs.is_prerelease }}"
-
           # Set description based on release type
           if [[ "${IS_PRERELEASE}" == "true" ]]; then
             DESC="Media automation platform (beta/development version)"
@@ -63,54 +63,61 @@ jobs:
             DESC="Media automation platform with Save.tv integration and Plex support"
           fi
 
-          cat > "homebrew-tap/Formula/${FORMULA_NAME}.rb" << EOF
-class ${CLASS_NAME} < Formula
-  desc "${DESC}"
-  homepage "https://github.com/jonaskern-dev/media-manager"
-  version "${VERSION_NO_V}"
-  license "MIT"
+          # Generate formula file
+          cat > "homebrew-tap/Formula/${FORMULA_NAME}.rb" << FORMULA_EOF
+          ${CLASS_NAME} < Formula
+            desc "${DESC}"
+            homepage "https://github.com/jonaskern-dev/media-manager"
+            version "${VERSION_NO_V}"
+            license "MIT"
 
-  on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-arm64"
-      sha256 "${SHA_DARWIN_ARM64}"
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
 
-      def install
-        bin.install "media-manager-darwin-arm64" => "media-manager"
-      end
-    else
-      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-amd64"
-      sha256 "${SHA_DARWIN_AMD64}"
+                def install
+                  bin.install "media-manager-darwin-arm64" => "media-manager"
+                end
+              else
+                url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-darwin-amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
 
-      def install
-        bin.install "media-manager-darwin-amd64" => "media-manager"
-      end
-    end
-  end
+                def install
+                  bin.install "media-manager-darwin-amd64" => "media-manager"
+                end
+              end
+            end
 
-  on_linux do
-    if Hardware::CPU.arm?
-      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-arm64"
-      sha256 "${SHA_LINUX_ARM64}"
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
 
-      def install
-        bin.install "media-manager-linux-arm64" => "media-manager"
-      end
-    else
-      url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-amd64"
-      sha256 "${SHA_LINUX_AMD64}"
+                def install
+                  bin.install "media-manager-linux-arm64" => "media-manager"
+                end
+              else
+                url "https://github.com/jonaskern-dev/media-manager/releases/download/${VERSION}/media-manager-linux-amd64"
+                sha256 "${SHA_LINUX_AMD64}"
 
-      def install
-        bin.install "media-manager-linux-amd64" => "media-manager"
-      end
-    end
-  end
+                def install
+                  bin.install "media-manager-linux-amd64" => "media-manager"
+                end
+              end
+            end
 
-  test do
-    system "#{bin}/media-manager", "--version"
-  end
-end
-EOF
+            test do
+              system "#{bin}/media-manager", "--version"
+            end
+          end
+          FORMULA_EOF
+
+          # Fix: add 'class' keyword (avoided in heredoc for YAML compatibility)
+          sed -i "s/${CLASS_NAME} < Formula/class ${CLASS_NAME} < Formula/" "homebrew-tap/Formula/${FORMULA_NAME}.rb"
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' "homebrew-tap/Formula/${FORMULA_NAME}.rb"
 
       - name: Validate formula
         run: |
